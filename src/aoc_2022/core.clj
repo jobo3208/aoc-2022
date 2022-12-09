@@ -197,5 +197,128 @@
         moved-crates (reduce execute-move crates moves)]
     (string/join (map peek moved-crates))))
 
+(defn day-6 [n input]
+  (->> (map vector (partition n 1 input) (range))
+       (drop-while (fn [[chs i]]
+                     (not= (count (set chs)) n)))
+       first
+       (#(+ n (second %)))))
+
+(defn day-7 [input]
+  (let [is-command? #(string/starts-with? % "$")
+        parse-command (fn [line]
+                        (let [[_ command & args] (string/split line #" ")]
+                          (case command
+                            "cd" [:command :cd (first args)]
+                            "ls" [:command :ls])))
+        parse-listing (fn [line]
+                        (let [xs (string/split line #" ")]
+                          (case (first xs)
+                            "dir" [:listing :dir (second xs)]
+                            [:listing :file (second xs) (Integer. (first xs))])))
+        init-state {:cwd [] :fs {}}
+        process-cd (fn [state [_ _ dir]]
+                     (if (= dir "..")
+                       (update state :cwd pop)
+                       (update state :cwd conj dir)))
+        process-command (fn [state item]
+                          (case (second item)
+                            :cd (process-cd state item)
+                            :ls state)) ; no-op
+        process-listing (fn [state [_ type name size :as item]]
+                          (update state :fs #(if (= type :dir)
+                                               (assoc-in % (conj (:cwd state) name) {})
+                                               (assoc-in % (conj (:cwd state) name) size))))
+        process-item (fn [state item]
+                       (case (first item)
+                         :command (process-command state item)
+                         :listing (process-listing state item)))
+        items (->> (string/split input #"\n")
+                   (map #(if (is-command? %)
+                           (parse-command %)
+                           (parse-listing %))))
+        fs (:fs (reduce process-item init-state items))
+        get-size (fn get-size [fs path]
+                   (let [node (get-in fs path)]
+                     (if (map? node)
+                       (reduce + (map #(get-size fs (conj path %)) (keys node)))
+                       node)))
+        get-dir-paths (fn get-dir-paths
+                        ([fs]
+                         (get-dir-paths fs [] []))
+                        ([m prefix result]
+                         (reduce-kv
+                           (fn [res k v]
+                             (if (map? v)
+                               (get-dir-paths v (conj prefix k) (conj res (conj prefix k)))
+                               res))
+                           result
+                           m)))
+        dir-sizes (map (partial get-size fs) (get-dir-paths fs))]
+    (->> dir-sizes
+         (filter #(<= % 100000))
+         (reduce +))))
+
+(defn day-7-part-2 [input]
+  (let [is-command? #(string/starts-with? % "$")
+        parse-command (fn [line]
+                        (let [[_ command & args] (string/split line #" ")]
+                          (case command
+                            "cd" [:command :cd (first args)]
+                            "ls" [:command :ls])))
+        parse-listing (fn [line]
+                        (let [xs (string/split line #" ")]
+                          (case (first xs)
+                            "dir" [:listing :dir (second xs)]
+                            [:listing :file (second xs) (Integer. (first xs))])))
+        init-state {:cwd [] :fs {}}
+        process-cd (fn [state [_ _ dir]]
+                     (if (= dir "..")
+                       (update state :cwd pop)
+                       (update state :cwd conj dir)))
+        process-command (fn [state item]
+                          (case (second item)
+                            :cd (process-cd state item)
+                            :ls state)) ; no-op
+        process-listing (fn [state [_ type name size :as item]]
+                          (update state :fs #(if (= type :dir)
+                                               (assoc-in % (conj (:cwd state) name) {})
+                                               (assoc-in % (conj (:cwd state) name) size))))
+        process-item (fn [state item]
+                       (case (first item)
+                         :command (process-command state item)
+                         :listing (process-listing state item)))
+        items (->> (string/split input #"\n")
+                   (map #(if (is-command? %)
+                           (parse-command %)
+                           (parse-listing %))))
+        fs (:fs (reduce process-item init-state items))
+        get-size (fn get-size [fs path]
+                   (let [node (get-in fs path)]
+                     (if (map? node)
+                       (reduce + (map #(get-size fs (conj path %)) (keys node)))
+                       node)))
+        get-dir-paths (fn get-dir-paths
+                        ([fs]
+                         (get-dir-paths fs [] []))
+                        ([m prefix result]
+                         (reduce-kv
+                           (fn [res k v]
+                             (if (map? v)
+                               (get-dir-paths v (conj prefix k) (conj res (conj prefix k)))
+                               res))
+                           result
+                           m)))
+        dir-sizes (map (partial get-size fs) (get-dir-paths fs))
+        total-space 70000000
+        required-unused-space 30000000
+        used-space (get-size fs ["/"])
+        unused-space (- total-space used-space)
+        need-to-free (- required-unused-space unused-space)]
+    (->> dir-sizes
+         sort
+         (drop-while #(< % need-to-free))
+         first)))
+
 (comment
-  (day-5-part-2 (slurp (io/resource "day-5.txt"))))
+  (day-7-part-2 (slurp (io/resource "day-7.txt"))))
