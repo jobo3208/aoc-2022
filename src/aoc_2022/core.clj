@@ -3,6 +3,8 @@
             [clojure.set :as s]
             [clojure.string :as string]))
 
+(def ^:dynamic *debug* false)
+
 (defn day-1 [input]
   (let [process-elf (fn [cal-strs]
                       (->> cal-strs
@@ -320,5 +322,145 @@
          (drop-while #(< % need-to-free))
          first)))
 
+(defn day-8 [input]
+  (let [height-grid (->> (string/split input #"\n")
+                         (mapv (fn [row] (mapv #(Integer. (str %)) row))))
+        h (count height-grid)
+        w (count (first height-grid))
+        id-grid (vec
+                  (for [y (range h)]
+                    (vec
+                      (for [x (range w)]
+                        (+ (* y w) x)))))
+        transpose (fn [m] (apply mapv vector m))  ; https://stackoverflow.com/a/10347404/1395204
+        rotate-cw (fn [grid]
+                    (mapv (comp vec reverse) (transpose grid)))
+        visible-from-left? (fn [height-grid [y x]]
+                             (let [tree-height (get-in height-grid [y x])
+                                   intervening-heights (take x (nth height-grid y))]
+                               (not (some #(>= % tree-height) intervening-heights))))
+        points (for [y (range h) x (range w)] [y x])
+        get-points-visible-from-left (fn [height-grid]
+                                       (filter (partial visible-from-left? height-grid) points))
+        get-ids-visible-from-left (fn [height-grid id-grid]
+                                    (let [vis-points (get-points-visible-from-left height-grid)]
+                                      (map #(get-in id-grid %) vis-points)))
+        visible-ids (reduce into #{} (map get-ids-visible-from-left
+                                          (take 4 (iterate rotate-cw height-grid))
+                                          (take 4 (iterate rotate-cw id-grid))))]
+    (count visible-ids)))
+
+(defn day-8-part-2 [input]
+  (let [height-grid (->> (string/split input #"\n")
+                         (mapv (fn [row] (mapv #(Integer. (str %)) row))))
+        h (count height-grid)
+        w (count (first height-grid))
+        id-grid (vec
+                  (for [y (range h)]
+                    (vec
+                      (for [x (range w)]
+                        (+ (* y w) x)))))
+        transpose (fn [m] (apply mapv vector m))  ; https://stackoverflow.com/a/10347404/1395204
+        rotate-cw (fn [grid]
+                    (mapv (comp vec reverse) (transpose grid)))
+        viewing-distance-rightward (fn [height-grid [y x]]
+                                     (let [tree-height (get-in height-grid [y x])
+                                           rightward-heights (drop (inc x) (nth height-grid y))
+                                           [smaller remaining] (split-with #(< % tree-height) rightward-heights)]
+                                       (+ (count smaller) (if (seq remaining) 1 0))))
+        points (for [y (range h) x (range w)] [y x])
+        get-viewing-distances-rightward (fn [height-grid id-grid]
+                                          (->> points
+                                               (map (fn [point]
+                                                      (let [id (get-in id-grid point)
+                                                            vd (viewing-distance-rightward height-grid point)]
+                                                        [id vd])))
+                                               (into {})))
+        scenic-scores (reduce (partial merge-with *) (map get-viewing-distances-rightward
+                                                          (take 4 (iterate rotate-cw height-grid))
+                                                          (take 4 (iterate rotate-cw id-grid))))]
+    (apply max (vals scenic-scores))))
+
+; trying a different approach where we break things out into defn's where it seems helpful
+
+(defn parse-input [input]
+  (let [char->dir {"R" :right "U" :up "L" :left "D" :down}]
+    (->> (string/split input #"\n")
+         (mapcat (fn [line]
+                   (let [[d n] (string/split line #" ")
+                         d (char->dir d)
+                         n (Integer. n)]
+                     (repeat n d)))))))
+
+(defn adjacent? [[px py] [qx qy]]
+  (and (<= (abs (- px qx)) 1)
+       (<= (abs (- py qy)) 1)))
+
+(defn move [[hx hy] [tx ty] dir]
+  (let [[hx' hy'] (case dir
+                     :right [(inc hx) hy]
+                     :up [hx (inc hy)]
+                     :left [(dec hx) hy]
+                     :down [hx (dec hy)])
+        [tx' ty'] (if (adjacent? [hx' hy'] [tx ty])
+                    [tx ty]
+                    [hx hy])]
+    [[hx' hy'] [tx' ty']]))
+
+(defn day-9 [input]
+  (let [moves (parse-input input)
+        hp [0 0]
+        tp [0 0]
+        [_ _ tps] (reduce
+                    (fn [[hp tp tps] dir]
+                      (let [[hp' tp'] (move hp tp dir)]
+                        [hp' tp' (conj tps tp')]))
+                    [hp tp #{}]
+                    moves)]
+    (count tps)))
+
+(defn move-head [[hx hy] dir]
+  (case dir
+    :right [(inc hx) hy]
+    :up [hx (inc hy)]
+    :left [(dec hx) hy]
+    :down [hx (dec hy)]))
+
+(defn catch-up [h' t]
+  (when *debug*
+    (prn h' t)
+    (prn (adjacent? h' t)))
+  (if (adjacent? h' t)
+    t
+    (let [[hx' hy'] h'
+          [tx ty] t
+          dx (- hx' tx)
+          dy (- hy' ty)
+          tx' (if (= (abs dx) 2) (+ tx (/ dx 2)) hx')
+          ty' (if (= (abs dy) 2) (+ ty (/ dy 2)) hy')]
+      [tx' ty'])))
+
+(defn move-rope
+  ([ps dir]
+   (move-rope ps dir nil))
+  ([ps dir h']
+   (when (seq ps)
+     (let [t (first ps)
+           t' (if (nil? h')
+                (move-head t dir)
+                (catch-up h' t))]
+       (cons t' (move-rope (next ps) dir t'))))))
+
+(defn day-9-part-2 [input]
+  (let [moves (parse-input input)
+        ps (vec (repeat 10 [0 0]))
+        [_ tps] (reduce
+                  (fn [[ps tps] dir]
+                    (let [ps' (move-rope ps dir)]
+                      [ps' (conj tps (last ps'))]))
+                  [ps #{}]
+                  moves)]
+    (count tps)))
+
 (comment
-  (day-7-part-2 (slurp (io/resource "day-7.txt"))))
+  (day-9-part-2 (slurp (io/resource "day-9.txt"))))
