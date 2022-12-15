@@ -29,7 +29,7 @@
 
 (defn parse-input [input]
   (->> (string/split input #"\n")
-       (partition-by (partial = ""))
+       (partition-by empty?)
        (take-nth 2)
        (map #(mapv edn/read-string %))))
 
@@ -52,7 +52,7 @@
 
 (defn parse-input-part-2 [input]
   (->> (string/split input #"\n")
-       (remove (partial = ""))
+       (remove empty?)
        (map edn/read-string)))
 
 (defn run-part-2 [input]
